@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+email-validator
+pytest
+httpx
+pydantic-settings
+PyJWT
+pwdlib[argon2]
+python-multipart
+sqlalchemy>=2.0, <3.0
+alembic==1.20.1
