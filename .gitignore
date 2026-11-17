@@ -35,3 +35,8 @@ Thumb.db
 
 # Git files
 .git/
+
+# Python build artifacts
+*.egg-info/
+dist/
+build/

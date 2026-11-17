@@ -22,7 +22,7 @@ class User(Base):
         nullable=False
     )
     hashed_password: Mapped[str] = mapped_column(
-        String(20),
+        String(255),
         nullable=False
     )
     role: Mapped[str] = mapped_column(
