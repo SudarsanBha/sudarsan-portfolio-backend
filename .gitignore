@@ -40,3 +40,6 @@ Thumb.db
 *.egg-info/
 dist/
 build/
+
+# Local production admin utility
+/backend/make_production_admin.py
