@@ -15,6 +15,7 @@ API Documentation| "Swagger UI" (https://sudarsan-portfolio-backend.onrender.com
 ReDoc| "API Reference" (https://sudarsan-portfolio-backend.onrender.com/redoc)
 Health Check| "API Health" (https://sudarsan-portfolio-backend.onrender.com/api/health)
 GitHub Repository| "Source Code" (https://github.com/SudarsanBha/sudarsan-portfolio-backend)
+Docker Hub| "Public Docker Image" (https://hub.docker.com/r/sudarsan4116/sudarsan-portfolio-api)
 
 Project Overview
 
@@ -89,6 +90,7 @@ Password hashing| Argon2
 Testing| Pytest, HTTPX
 Frontend| HTML5, CSS3, JavaScript
 Containerization| Docker, Docker Compose
+Image registry| Docker Hub
 Backend hosting| Render
 Database hosting| Neon PostgreSQL
 Frontend hosting| GitHub Pages
@@ -232,27 +234,65 @@ http://127.0.0.1:5500/frontend/
 
 Docker
 
-The project includes Docker and Docker Compose configuration.
+The project includes a Dockerfile and Docker Compose configuration.
 
-From the project root:
+The backend Docker image is also published publicly on Docker Hub:
 
-Build and start the containers:
+Docker Hub: https://hub.docker.com/r/sudarsan4116/sudarsan-portfolio-api
 
-docker compose up -d --build
+Image:
 
-Check container status:
+sudarsan4116/sudarsan-portfolio-api:latest
+
+Prerequisites
+
+- Docker Desktop installed and running.
+- A configured "backend/.env" file.
+- An initialized local SQLite database at "backend/portofolio.db".
+
+The database must exist before starting Docker Compose because the configuration uses a bind mount with automatic host-file creation disabled. Running the local Alembic migrations described above initializes the database.
+
+Build the Docker image
+
+Run these commands from the project root:
+
+docker compose build backend
+
+Start the backend container
+
+docker compose up -d backend
+
+Check container status
 
 docker compose ps
 
-View backend logs:
+View backend logs
 
 docker compose logs -f backend
 
-Stop the containers:
+Verify the application
+
+- API health: http://localhost:8000/api/health
+- Projects endpoint: http://localhost:8000/api/projects/
+- Swagger documentation: http://localhost:8000/docs
+
+Stop the container
 
 docker compose down
 
-The local SQLite database is stored in "backend/portofolio.db" and is excluded from Git.
+Docker configuration notes
+
+- Docker Compose uses SQLite for local container testing.
+- The local database is mounted from "backend/portofolio.db" into "/app/portofolio.db".
+- The container uses the "appuser" non-root Linux user.
+- The Docker image does not contain the local ".env" file or SQLite database.
+- Environment variables are supplied at container runtime.
+- The container includes a health check using "/api/health".
+- Render production deployment uses Neon PostgreSQL rather than the local Docker SQLite database.
+
+The Docker Compose configuration builds the image locally. The separately published Docker Hub image can also be pulled using:
+
+docker pull sudarsan4116/sudarsan-portfolio-api:latest
 
 Database Migrations
 
@@ -337,6 +377,8 @@ Deployment workflow
 4. The backend connects to Neon PostgreSQL.
 5. Alembic migrations manage production database schema changes.
 
+The Docker image is separately published to Docker Hub for distribution and container testing.
+
 Development Roadmap
 
 The following features are planned for future development. They are not yet claimed as implemented.
@@ -409,6 +451,8 @@ Project Status
 Current status: Deployed and operational.
 
 The portfolio currently has a working frontend, production FastAPI backend, Neon PostgreSQL database, authentication, administrator authorization, database migrations, automated tests and end-to-end contact-message functionality.
+
+Docker containerization has been verified locally, and the Docker image has been published publicly on Docker Hub.
 
 Further security, performance and scalability improvements are planned as part of the project's ongoing development.
 
