@@ -11,6 +11,9 @@ from app.models.projects import Project
 from app.models.contact import ContactMessage
 from app.config import settings
 
+# RefreshToken: This ensures Alembic knows ablut the new table when generating migrations.
+from app.models.refresh_tokens import RefreshToken
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

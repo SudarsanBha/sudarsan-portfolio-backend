@@ -36,8 +36,7 @@ def db_session():
         yield db
     finally:
         db.close()
-
-    Base.metadata.drop_all(bind=test_engine)
+        Base.metadata.drop_all(bind=test_engine)
 
 
 @pytest.fixture

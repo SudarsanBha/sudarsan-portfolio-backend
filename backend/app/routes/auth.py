@@ -1,11 +1,12 @@
 import logging
+import jwt
 
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from fastapi.security import OAuth2PasswordRequestForm
+# from fastapi.security import OAuth2PasswordRequestForm
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.users import User
@@ -14,12 +15,22 @@ from app.schemas.user import(
     UserRegister,
     UserLogin,
     UserResponse,
+    RefreshTokenRequest,
 )
 from app.schemas.error import ErrorResponse
 from app.security import(
     create_access_token,
+    decode_refresh_token,
     hash_password,
     verify_password,
+)
+
+from app.services.refresh_tokens import (
+    create_and_store_refresh_token,
+    rotate_refresh_token,
+    RefreshTokenReuseError,
+    get_refresh_token_record,
+    revoke_refresh_token,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,7 +79,7 @@ def register_user(
     # print("Existing User truth value:", bool(existing_user))
 
     if existing_user:
-        print("409 raised by existing-user check")
+        # print("409 raised by existing-user check")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with this email is already exists.",
@@ -126,9 +137,10 @@ def register_user(
         summary="Authenticate a user",
         description=(
             "Authenticate using an email address and password. "
-            "Returns a JWT access token when the credentials are valid."
+            "Returns a JWT access token and a refresh token when "
+            "the credentials are valid."
         ),
-        response_description="JWT access token and token type.",
+        response_description="JWT access token, refresh token, and token type.",
     )
 def login_user(
     data: UserLogin,
@@ -158,7 +170,138 @@ def login_user(
         role = user.role,
     )
 
-    return TokenResponse(access_token=token)
+    try:
+        refresh_token = create_and_store_refresh_token(
+            db = db,
+            user_id = user.id,
+        )
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+
+        logger.exception("Database error occured during user login.")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to complete login. Please try again."
+        ) from None
+
+    return TokenResponse(
+        access_token=token,
+        refresh_token=refresh_token,)
+
+
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+    summary="Refresh authentication tokens",
+    description=(
+        "Exchange a valid refresh token for a new access token "
+        "and a rotated refresh token."
+    ),
+)
+def refresh_access_token(
+    data: RefreshTokenRequest,
+    db: DatabaseSession,
+):
+    try:
+        user, new_refresh_token = rotate_refresh_token(
+            db=db,
+            token=data.refresh_token,
+        )
+
+        new_access_token = create_access_token(
+            subject=str(user.id),
+            role=user.role,
+        )
+
+        return TokenResponse(
+            access_token=new_access_token,
+            refresh_token=new_refresh_token
+        )
+
+    except RefreshTokenReuseError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token reuse detected. Please log in again."
+        ) from None
+
+    except (ValueError, jwt.PyJWTError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token.",
+        ) from None
+
+    except Exception:
+        logger.exception("Unexpected error during token refresh.")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to refresh authentication tokens."
+        ) from None
+
+
+@router.post(
+        "/logout",
+        status_code=status.HTTP_204_NO_CONTENT,
+        summary="Log out an user",
+        description="Revoke the submitted refresh token so it can not be used "
+        "to obtain new access or refresh tokens. Existing access "
+        "tokens remain valid until they expire.",
+)
+def logout_user(
+    data: RefreshTokenRequest,
+    db: DatabaseSession,
+):
+    try:
+        payload = decode_refresh_token(data.refresh_token)
+        token_record = get_refresh_token_record(
+            db=db,
+            token=data.refresh_token,
+        )
+
+        if token_record is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token.",
+            )
+
+        if (
+            token_record.jti != payload["jti"]
+            or str(token_record.user_id) != payload["sub"]
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token."
+            )
+
+        if token_record.revoked_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has already been revoked."
+            )
+
+        revoke_refresh_token(db, token_record)
+
+        db.commit()
+
+    except HTTPException:
+        raise
+
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token."
+        ) from None
+
+    except Exception:
+        db.rollback()
+        logger.exception("Unexpected error during logout.")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to log out.",
+        ) from None
 
 
 @router.get(
