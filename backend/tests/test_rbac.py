@@ -488,3 +488,31 @@ def test_tampered_access_token_is_rejected(client, db_session):
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Could not validate credentials"
+
+
+def test_unexpected_jwt_algorithm_is_rejected(client, db_session):
+    user = create_test_user(
+        db_session,
+        "unexpected-algorithm@example.com",
+        role="user",
+    )
+
+    unexpected_token = jwt.encode(
+        {
+            "sub": str(user.id),
+            "role": user.role,
+            "type": "access",
+            "iat": datetime.now(timezone.utc),
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=10),
+        },
+        settings.jwt_secret_key,
+        algorithm="HS384",
+    )
+
+    response = client.get(
+        "/api/auth/me",
+        headers={"authorization": f"Bearer {unexpected_token}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Could not validate credentials"
