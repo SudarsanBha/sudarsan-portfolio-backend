@@ -1,5 +1,8 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+import jwt
 import pytest
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -12,6 +15,7 @@ from app.models.users import User
 from app.security import hash_password, create_access_token
 from app.models.projects import Project as ProjectModel
 from app.models.contact import ContactMessage as ContactMessageModel
+from app.config import settings
 
 # Isolate in-memory database for RBAC tests.
 test_engine = create_engine(
@@ -422,3 +426,33 @@ def test_admin_gets_empty_list_when_no_contact_messages(client, db_session):
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_expired_access_token_is_rejected(client, db_session):
+    user = create_test_user(
+        db_session,
+        "expired-access@example.com",
+        role="user",
+    )
+
+    expired_time = datetime.now(timezone.utc) - timedelta(minutes=5)
+
+    expired_token = jwt.encode(
+        {
+            "sub": str(user.id),
+            "role": user.role,
+            "type": "access",
+            "iat": expired_time - timedelta(minutes=5),
+            "exp": expired_time,
+        },
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+    )
+
+    response = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {expired_token}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Could not validate credentials"
