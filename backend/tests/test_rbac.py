@@ -130,12 +130,14 @@ def test_inactive_user_with_valid_token_is_rejected(client, db_session):
     assert response.status_code == 403
     assert response.json()["detail"] =="User account is inactive"
 
+
 def test_invalid_token_is_rejected(client):
     response = client.get(
         "/api/admin/dashboard",
         headers={"Authorization": f"Bearer invalid.token.value"},
     )
     assert response.status_code == 401
+
 
 def create_test_project(db_session) -> ProjectModel:
     project = ProjectModel(
@@ -190,6 +192,7 @@ def test_regular_user_cannot_create_project(client, db_session):
     )
 
     assert response.status_code == 403
+
 
 def test_admin_can_update_project(client, db_session):
     admin = create_test_user(
@@ -311,6 +314,7 @@ def test_public_user_cannot_assign_admin_role(client):
     assert response.status_code == 201
     assert response.json()["role"] == "user"
 
+
 def test_contact_message_is_saved_to_database(client, db_session):
     response = client.post(
         "/api/contact/",
@@ -358,6 +362,7 @@ def test_contact_database_failure_returns_500_and_rolls_back(
     "Please try again.")
     saved_message = (db_session.query(ContactMessageModel)).filter_by(email="failure@example.com").first()
     assert saved_message is None
+
 
 def test_admin_can_read_contact_messages(client, db_session):
     admin = create_test_user(
@@ -452,6 +457,33 @@ def test_expired_access_token_is_rejected(client, db_session):
     response = client.get(
         "/api/auth/me",
         headers={"Authorization": f"Bearer {expired_token}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Could not validate credentials"
+
+
+def test_tampered_access_token_is_rejected(client, db_session):
+    user = create_test_user(
+        db_session,
+        "tampered-token@example.com",
+        role="user",
+    )
+
+    valid_token = token_for(user)
+
+    header, payload, signature = valid_token.split(".")
+
+    tampered_payload = payload[:-1] + (
+        "A" if payload[0] != "A"
+        else "B"
+    )
+
+    tampered_token = f"{header}.{tampered_payload}.{signature}"
+
+    response = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {tampered_token}"},
     )
 
     assert response.status_code == 401
